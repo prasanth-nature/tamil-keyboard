@@ -1,6 +1,6 @@
 # தமிழ் விசைப்பலகை · Tamil Keyboard Layout
 
-**A custom Tamil IBus input method for AlmaLinux, RHEL, and Fedora. It uses a dedicated Tamil Orthogarphy-based composition map rather than Tamil99.**
+**A custom Tamil IBus input method for AlmaLinux, RHEL, and Fedora. It uses a dedicated Tamil Orthogrphy-based composition map rather than Tamil99.**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-AlmaLinux%20%7C%20RHEL%20%7C%20Fedora-informational)](https://almalinux.org)
