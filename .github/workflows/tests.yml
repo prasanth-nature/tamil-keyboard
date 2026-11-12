@@ -1,0 +1,32 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Test layout rules
+        run: python3 tests/test_tamil_core.py
+      - name: Test engine composition
+        run: python3 src/ibus-engine-tamil-custom --selftest
+      - name: Validate IBus component metadata
+        run: python3 tests/test_component.py
+      - name: Check shell scripts
+        run: bash -n install.sh uninstall.sh doctor.sh
+      - name: Verify generated layout chart
+        run: |
+          python3 tools/build_chart.py
+          git diff --exit-code -- layout-chart.html
