@@ -1,0 +1,236 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+"""IBus engine for the custom Tamil keyboard layout.
+
+Run by the IBus daemon through the component file
+``~/.local/share/ibus/component/tamil-custom.xml``.
+
+    ibus-engine-tamil-custom --ibus      # normal mode (started by IBus)
+    ibus-engine-tamil-custom --selftest  # check the layout logic, no IBus
+
+The D-Bus name below MUST be identical to <name> in the component file,
+otherwise the daemon starts this process but can never attach to it, and
+the layout appears in Settings while typing does nothing.
+"""
+
+import os
+import sys
+import time
+import traceback
+
+HERE = os.path.dirname(os.path.realpath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+
+from tamil_core import Composer  # noqa: E402
+
+VERSION = "1.2"
+ENGINE_NAME = "tamil-custom"
+# keep in sync with <name> in component/tamil-custom.xml.in
+BUS_NAME = "org.local.IBus.TamilCustom"
+
+LOG_PATH = os.path.expanduser(os.path.join("~", ".cache", "tamil-custom", "engine.log"))
+
+
+def log(message):
+    """Append a line to ~/.cache/tamil-custom/engine.log (never raises)."""
+    try:
+        directory = os.path.dirname(LOG_PATH)
+        if directory and not os.path.isdir(directory):
+            os.makedirs(directory, exist_ok=True)
+        with open(LOG_PATH, "a", encoding="utf-8") as handle:
+            handle.write("%s  %s\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), message))
+    except Exception:
+        pass
+
+
+def build_engine_class(IBus):
+    """Create the engine class.  Split out so --selftest needs no IBus."""
+
+    class TamilEngine(IBus.EngineSimple):
+        __gtype_name__ = "IBusEngineTamilCustom"
+
+        def __init__(self, bus=None, object_path=None, connection=None, **kwargs):
+            # IBus may construct us either through the factory (properties
+            # arrive as keyword arguments) or directly with (bus, path).
+            if connection is None and bus is not None:
+                connection = bus.get_connection()
+            if object_path is None:
+                object_path = kwargs.pop("object_path", None)
+            kwargs.pop("engine_name", None)
+            props = {"connection": connection, "object_path": object_path}
+            try:
+                super(TamilEngine, self).__init__(has_focus_id=True, **props)
+            except TypeError:
+                super(TamilEngine, self).__init__(**props)
+            self.composer = Composer()
+            self.seen_key_event = False
+            log("engine instance created at %s" % object_path)
+
+        # -- key handling ---------------------------------------------------
+        def do_process_key_event(self, keyval, keycode, state):
+            if not self.seen_key_event:
+                self.seen_key_event = True
+                log("first key event reached the engine (keyval=%d state=%d)"
+                    % (keyval, state))
+
+            if state & IBus.ModifierType.RELEASE_MASK:
+                return False
+
+            # Never steal shortcuts.
+            if state & (
+                IBus.ModifierType.CONTROL_MASK
+                | IBus.ModifierType.MOD1_MASK
+                | IBus.ModifierType.SUPER_MASK
+            ):
+                self.composer.reset()
+                return False
+
+            if keyval <= 0 or keyval >= 0x110000:
+                self.composer.reset()
+                return False
+
+            char = chr(keyval)
+            caps = bool(state & IBus.ModifierType.LOCK_MASK)
+            shift = bool(state & IBus.ModifierType.SHIFT_MASK)
+
+            produced = self.composer.feed(char, caps=caps, shift=shift)
+            if produced is None:
+                self.composer.reset()
+                return False
+
+            self.commit_text(IBus.Text.new_from_string(produced))
+            return True
+
+        # -- housekeeping ---------------------------------------------------
+        def do_focus_out(self):
+            self.composer.reset()
+            return False
+
+        def do_reset(self):
+            self.composer.reset()
+            return False
+
+    return TamilEngine
+
+
+def selftest():
+    """Exercise the layout without IBus.  Exit status 0 means all good."""
+    from tamil_core import type_text
+
+    cases = [
+        ("a", "\u0B95"),                        # க
+        ("a^z", "\u0B95\u0BBE"),                # கா   (க then Caps+அ)
+        ("sx", "\u0B9A\u0BBF"),                 # சி
+        ("sz", "\u0B9A\u0BCD"),                 # ச்
+        ("s^z", "\u0B9A\u0BBE"),                # சா
+        ("qx", "\u0BB5\u0BBF"),                 # வி
+        ("q^c", "\u0BB5\u0BC2"),                # வூ   (வ + Caps+உ)
+        ("~az", "\u0B95\u0BCD\u0BB7\u0BCD"),    # க்ஷ்
+        ("~sz", "\u0BB8\u0BCD"),                # ஸ்
+        ("^z", "\u0B86"),                       # ஆ
+        ("^v", "\u0B8F"),                       # ஏ
+        ("z", "\u0B85"),                        # அ
+        ("z^z", "\u0B85\u0B86"),                # அஆ
+        ("a z", "\u0B95 \u0B85"),               # space clears the pending state
+    ]
+    failures = 0
+    for keys, expected in cases:
+        got = type_text(keys)
+        if got != expected:
+            failures += 1
+            print("FAIL %-6r -> %r (expected %r)" % (keys, got, expected))
+    if failures:
+        print("%d/%d self-test cases failed" % (failures, len(cases)))
+        return 1
+    print("tamil-custom: %d self-test cases passed" % len(cases))
+    return 0
+
+
+def check_component():
+    """Print what the component file declares, for troubleshooting."""
+    candidates = [
+        os.path.join(os.path.expanduser("~"), ".local", "share", "ibus",
+                     "component", "tamil-custom.xml"),
+        os.path.join("/usr/share/ibus/component", "tamil-custom.xml"),
+    ]
+    found = False
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        found = True
+        try:
+            import xml.etree.ElementTree as ET
+
+            root = ET.parse(path).getroot()
+            declared = root.findtext("name") or ""
+            print("component : %s" % path)
+            print("  <name>  : %s" % declared)
+            print("  <exec>  : %s" % (root.findtext("exec") or ""))
+            if declared.strip() == BUS_NAME:
+                print("  status  : OK - matches the engine")
+            else:
+                print("  status  : MISMATCH - engine claims %s" % BUS_NAME)
+                print("            reinstall the package; the two must match")
+        except Exception as exc:
+            print("component : %s (unreadable: %s)" % (path, exc))
+    if not found:
+        print("component : NOT INSTALLED (no tamil-custom.xml found)")
+        return 1
+    return 0
+
+
+def main():
+    if "--selftest" in sys.argv:
+        return selftest()
+    if "--check" in sys.argv:
+        return check_component()
+    if "--version" in sys.argv:
+        print("tamil-custom %s" % VERSION)
+        return 0
+
+    log("--- start (version %s, pid %d) ---" % (VERSION, os.getpid()))
+
+    try:
+        import gi
+
+        gi.require_version("IBus", "1.0")
+        from gi.repository import GLib, IBus
+    except Exception as exc:  # pragma: no cover - depends on the host
+        message = (
+            "tamil-custom: cannot load the IBus Python bindings (%s).\n"
+            "Install them with:  sudo dnf install -y ibus ibus-libs python3-gobject\n" % exc
+        )
+        sys.stderr.write(message)
+        log(message.strip())
+        return 1
+
+    try:
+        TamilEngine = build_engine_class(IBus)
+
+        bus = IBus.Bus()
+        if not bus.is_connected():
+            log("not connected to the IBus daemon")
+            sys.stderr.write("tamil-custom: not connected to the IBus daemon\n")
+            return 1
+
+        loop = GLib.MainLoop()
+        bus.connect("disconnected", lambda *a: loop.quit())
+
+        factory = IBus.Factory.new(bus.get_connection())
+        factory.add_engine(ENGINE_NAME, TamilEngine.__gtype__)
+        owned = bus.request_name(BUS_NAME, 0)
+        log("factory registered, request_name(%s) -> %s" % (BUS_NAME, owned))
+
+        loop.run()
+        log("main loop finished, exiting")
+        return 0
+    except Exception:
+        text = traceback.format_exc()
+        sys.stderr.write(text)
+        log(text)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

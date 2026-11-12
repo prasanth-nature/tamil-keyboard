@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<component>
+  <name>org.local.IBus.TamilCustom</name>
+  <description>Tamil custom keyboard layout</description>
+  <exec>@ENGINE_EXEC@</exec>
+  <version>1.2</version>
+  <author>Prasanth K</author>
+  <license>MIT</license>
+  <homepage>https://github.com/ibus/ibus/wiki</homepage>
+  <textdomain>tamil-custom</textdomain>
+  <engines>
+    <engine>
+      <name>tamil-custom</name>
+      <language>ta</language>
+      <license>MIT</license>
+      <author>Prasanth K</author>
+      <layout>us</layout>
+      <longname>Tamil (custom)</longname>
+      <description>Custom Tamil layout: qwerty keys map to Tamil letters, consonant + vowel combines, Caps Lock gives long vowels</description>
+      <rank>1</rank>
+      <symbol>த</symbol>
+    </engine>
+  </engines>
+</component>
